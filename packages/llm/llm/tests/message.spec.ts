@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   CallId,
   createAssistantMessage,
@@ -95,5 +95,21 @@ describe('message construction', () => {
     expect(message.id).not.toHaveLength(0)
     expect(Object.isFrozen(message)).toBe(true)
     expect(Object.isFrozen(message.content[0])).toBe(true)
+  })
+
+  it('mints RFC 4122 ids with only getRandomValues (no secure-context randomUUID)', () => {
+    // Insecure origins (plain HTTP on a LAN) expose getRandomValues but not randomUUID.
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0) })
+    try {
+      const message = createUserMessage({
+        content: [{ type: 'text' as const, text: 'answer' }],
+        source: { kind: 'plugin' as const, plugin: 'test' },
+      })
+
+      expect(message.id)
+        .toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

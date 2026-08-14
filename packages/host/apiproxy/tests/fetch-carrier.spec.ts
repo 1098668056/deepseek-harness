@@ -803,3 +803,32 @@ describe('resolveBase', () => {
     }
   })
 })
+
+describe('mintRpcId on insecure origins', () => {
+  it('mints RFC 4122 ids with only getRandomValues (no secure-context randomUUID)', async () => {
+    class Probe extends AbstractApiClient {
+      lastMinted = ''
+
+      protected async doFetch(_input: URL): Promise<Response> {
+        return Response.json({ type: 'server-response', rpcId: this.lastMinted, result: { ok: true, value: { items: [] } } })
+      }
+      // eslint-disable-next-line sonarjs/no-identical-functions
+      protected override mintRpcId(): ReturnType<AbstractApiClient['mintRpcId']> {
+        const id = super.mintRpcId()
+        this.lastMinted = id
+        return id
+      }
+    }
+    // Insecure origins (plain-HTTP LAN deployments) expose getRandomValues
+    // but not randomUUID; the carrier must keep minting under that shape.
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0) })
+    try {
+      const probe = new Probe()
+      await probe.sessions.list({})
+      expect(probe.lastMinted)
+        .toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
